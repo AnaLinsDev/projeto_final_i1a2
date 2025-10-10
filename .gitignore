@@ -1,0 +1,35 @@
+/notas_fiscais
+
+# Ambiente virtual Python
+venv/
+.venv/
+ENV/
+env/
+venv.bak/
+
+# Arquivos de cache e compilação
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Logs e arquivos temporários
+*.log
+*.tmp
+*.temp
+*.bak
+*.swp
+
+# Configurações do sistema/IDE
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Arquivos de ambiente
+.env
+*.env
+
+# Streamlit e cache do projeto
+.streamlit/
+.cache/
+__pycache__/

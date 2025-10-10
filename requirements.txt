@@ -1,0 +1,10 @@
+pandas
+PyMuPDF
+matplotlib
+seaborn
+streamlit
+pdf2image
+pytesseract
+google-generativeai
+langchain
+langchain-google-genai
