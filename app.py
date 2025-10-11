@@ -1,145 +1,195 @@
 import os
-import fitz  # PyMuPDF
+import re
 import tempfile
+import time
 import streamlit as st
 import google.generativeai as genai
-from pdf2image import convert_from_path
-from PIL import Image
-import pytesseract
+
+# ------------------------------------------------------
+# --- Configuração da Página ---------------------------
+# ------------------------------------------------------
+
+st.set_page_config(
+    page_title="🤖 Agente I2A2 - Leitor de Nota Fiscal",
+    page_icon="🧾",
+    layout="centered"
+)
+
+# ------------------------------------------------------
+# --- Estilos customizados -----------------------------
+# ------------------------------------------------------
+
+st.markdown("""
+    <style>
+        /* Centraliza o conteúdo */
+        .block-container {
+            max-width: 900px;
+            margin: auto;
+            padding-top: 2rem;
+        }
+        /* Estilo dos títulos */
+        h1, h2, h3 {
+            text-align: center;
+            color: #2B4162;
+        }
+        /* Caixa de upload personalizada */
+        .stFileUploader {
+            border: 2px dashed #6C63FF;
+            border-radius: 12px;
+            padding: 1rem;
+        }
+        /* Spinner */
+        div[data-testid="stSpinner"] p {
+            font-size: 1.1rem;
+            font-weight: 500;
+        }
+        /* Caixa de código */
+        pre code {
+            white-space: pre-wrap !important;
+            word-wrap: break-word !important;
+        }
+    </style>
+""", unsafe_allow_html=True)
 
 # ------------------------------------------------------
 # --- Funções auxiliares -------------------------------
 # ------------------------------------------------------
 
-def log_message(text: str):
-    """Exibe mensagens de log na interface Streamlit."""
-    st.write(text)
-
-
-def extract_text_with_ocr(pdf_path: str) -> str:
-    """Extrai texto de PDFs escaneados usando OCR (Tesseract)."""
-    text = ""
+def extrair_texto_via_gemini(model, file_bytes: bytes, file_name: str, mime_type: str) -> str:
+    """Envia o arquivo diretamente ao modelo Gemini para extrair o texto."""
     try:
-        images = convert_from_path(pdf_path)
-        for img in images:
-            text += pytesseract.image_to_string(img, lang="por")
+        response = model.generate_content(
+            [
+                {"mime_type": mime_type, "data": file_bytes},
+                "\nExtraia **todo o texto legível** deste arquivo e devolva apenas o texto puro, sem explicações."
+            ]
+        )
+        return response.text.strip()
     except Exception as e:
-        raise ValueError(f"Erro ao processar OCR: {e}")
-    return text.strip()
+        raise ValueError(f"Erro ao processar arquivo com Gemini: {e}")
 
-
-def pdf_to_text(pdf_path: str) -> str:
-    """
-    Extrai texto de um PDF.
-    - Primeiro tenta extração direta (PyMuPDF).
-    - Se falhar ou não houver texto, usa OCR como fallback.
-    """
-    if not os.path.exists(pdf_path):
-        raise FileNotFoundError(f"Arquivo não encontrado: {pdf_path}")
-
-    text = ""
-    try:
-        with fitz.open(pdf_path) as doc:
-            for page in doc:
-                text += page.get_text("text")
-    except Exception:
-        text = ""
-
-    if not text.strip():
-        st.info("📷 PDF parece ser escaneado — usando OCR para extrair o texto...")
-        text = extract_text_with_ocr(pdf_path)
-
-    return text.strip()
-
-
-def gerar_prompt_pdf(pdf_text: str) -> str:
-    """Monta o prompt de extração estruturada no formato JSON."""
+def gerar_prompt_nota_fiscal(texto_extraido: str) -> str:
+    """Gera o prompt de análise da nota fiscal."""
     return f"""
-Leia o texto de uma nota fiscal brasileira e extraia os dados nos campos especificados.
+    Leia o texto de uma nota fiscal brasileira e extraia os dados nos campos especificados.
 
-Texto para análise:
-{pdf_text[:8000]}  # truncado para evitar limite de tokens
+    Texto para análise:
+    {texto_extraido[:8000]}
 
-Responda **apenas** com o JSON preenchido, seguindo o formato abaixo:
+    Responda **apenas** com o JSON preenchido, seguindo o formato abaixo:
 
-{{
-  "emitente_info": {{
-    "nome": "",
-    "cnpj": "",
-    "endereco": "",
-    "telefone": ""
-  }},
-  "destinatario_info": {{
-    "nome": "",
-    "cpf_cnpj": "",
-    "endereco": "",
-    "telefone": ""
-  }},
-  "info_nota": [
     {{
-      "descricao": "",
-      "quantidade": "",
-      "valor_total_item": ""
+      "emitente_info": {{
+        "nome": "",
+        "cnpj": "",
+        "endereco": "",
+        "telefone": ""
+      }},
+      "destinatario_info": {{
+        "nome": "",
+        "cpf_cnpj": "",
+        "endereco": "",
+        "telefone": ""
+      }},
+      "info_nota": [
+        {{
+          "descricao": "",
+          "quantidade": "",
+          "valor_total_item": ""
+        }}
+      ],
+      "valor_total_nota": "",
+      "icms": "",
+      "ipi": "",
+      "pis": "",
+      "cofins": "",
+      "cfop": "",
+      "cst": "",
+      "outros_codigos_fiscais": ""
     }}
-  ],
-  "valor_total_nota": "",
-  "icms": "",
-  "ipi": "",
-  "pis": "",
-  "cofins": "",
-  "cfop": "",
-  "cst": "",
-  "outros_codigos_fiscais": ""
-}}
-
-Se algum campo não existir, deixe-o como string vazia ("").
+    Se algum campo não existir, deixe-o como string vazia ("").
     """.strip()
 
 # ------------------------------------------------------
-# --- Interface Streamlit ------------------------------
+# --- Interface principal ------------------------------
 # ------------------------------------------------------
 
-st.set_page_config(page_title="Agente I2A2 - Leitor de Nota Fiscal", page_icon="🤖")
-st.title("🤖 Agente I2A2 - Leitor de Nota Fiscal (PDF)")
+st.title("🤖 Agente I2A2 - Leitor de Nota Fiscal")
+st.caption("💡 Faça upload de um PDF, XML ou imagem (JPG/PNG) contendo uma nota fiscal para análise automática.")
 
-# Campo para API Key
-api_key = st.text_input("🔑 Insira sua Google API Key:", type="password")
+# Entrada da API Key
+api_key = st.text_input("🔑 Insira sua Google API Key:", type="password", help="Necessária para usar o modelo Gemini.")
 
 if not api_key:
-    st.warning("⚠️ Insira sua API Key para continuar.")
+    st.info("🔐 Insira sua API Key para começar.")
     st.stop()
 
-# Configuração da API
 os.environ["GOOGLE_API_KEY"] = api_key
 genai.configure(api_key=api_key)
+
 model = genai.GenerativeModel("models/gemini-2.5-flash")
 
-# Upload de PDF
-uploaded_file = st.file_uploader("📂 Faça upload do arquivo PDF da nota fiscal", type=["pdf"])
+# Upload de arquivo
+uploaded_file = st.file_uploader(
+    "📂 Faça upload do arquivo da nota fiscal",
+    type=["pdf", "xml", "jpg", "jpeg", "png"]
+)
 
 if uploaded_file:
-    with st.spinner("📂 Lendo e processando o PDF..."):
-        tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
-        tmp_file.write(uploaded_file.getbuffer())
-        tmp_file.close()
+    start_time = time.time()
 
-        pdf_path = tmp_file.name
-        pdf_text = pdf_to_text(pdf_path)
+    file_ext = uploaded_file.name.split(".")[-1].lower()
+    mime_map = {
+        "pdf": "application/pdf",
+        "xml": "application/xml",
+        "jpg": "image/jpeg",
+        "jpeg": "image/jpeg",
+        "png": "image/png",
+    }
+    mime_type = mime_map.get(file_ext, "application/octet-stream")
 
-    if not pdf_text.strip():
-        st.error("❌ Não foi possível extrair texto do PDF. Verifique se o arquivo está legível.")
+    st.success(f"✅ Arquivo **{uploaded_file.name}** detectado! Tipo: **.{file_ext}**")
+
+    with st.spinner("📖 Extraindo texto com Gemini..."):
+        try:
+            texto_extraido = extrair_texto_via_gemini(model, uploaded_file.getvalue(), uploaded_file.name, mime_type)
+        except Exception as e:
+            st.error(f"❌ Erro ao processar o arquivo: {e}")
+            st.stop()
+
+    if not texto_extraido.strip():
+        st.error("⚠️ O Gemini não conseguiu extrair texto do arquivo.")
         st.stop()
 
-    st.success(f"✅ Arquivo '{uploaded_file.name}' processado com sucesso!")
-
-    with st.spinner("🤖 Extraindo dados estruturados..."):
-        prompt = gerar_prompt_pdf(pdf_text)
+    with st.spinner("🤖 Gerando JSON estruturado..."):
         try:
+            prompt = gerar_prompt_nota_fiscal(texto_extraido)
             response = model.generate_content(prompt)
-            st.subheader("📊 Resultado (JSON):")
-            st.code(response.text.strip(), language="json")
         except Exception as e:
-            st.error(f"Erro durante a análise: {e}")
+            st.error(f"❌ Erro durante a análise: {e}")
+            st.stop()
+
+    total_time = time.time() - start_time
+
+    st.success(f"🎉 Análise concluída em **{total_time:.2f} segundos**!")
+    st.subheader("📊 Resultado (JSON extraído):")
+
+    # Mostra o JSON formatado
+    json_result = response.text.strip()
+    st.code(json_result, language="json")
+
+    json_resulto_download = re.sub(r"^```(?:json)?|```$", "", json_result, flags=re.MULTILINE).strip()
+
+    # Botão para download
+    st.download_button(
+        label="💾 Baixar JSON",
+        data=json_resulto_download.encode("utf-8"),
+        file_name="relatorio.json",
+        mime="application/json",
+        help="Clique para baixar o resultado em formato JSON"
+    )
+
 
 else:
-    st.info("⬆️ Faça upload de um arquivo PDF para começar.")
+    st.info("⬆️ Faça upload de um arquivo para iniciar a análise.")
+
