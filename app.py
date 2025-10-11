@@ -95,9 +95,11 @@ def gerar_prompt_nota_fiscal(texto_extraido: str) -> str:
         {{
           "descricao": "",
           "quantidade": "",
+          "valor_unitario_item": ""
           "valor_total_item": ""
         }}
       ],
+      "data_hora_emissao": "",
       "valor_total_nota": "",
       "icms": "",
       "ipi": "",
@@ -105,9 +107,16 @@ def gerar_prompt_nota_fiscal(texto_extraido: str) -> str:
       "cofins": "",
       "cfop": "",
       "cst": "",
-      "outros_codigos_fiscais": ""
+      "outros_codigos_fiscais": {{}}
     }}
-    Se algum campo não existir, deixe-o como string vazia ("").
+
+
+    ⚠️ Instruções adicionais:
+    - Inclua **somente códigos fiscais** no campo "outros_codigos_fiscais".
+    - **NÃO** inclua números de série, IE, IM, COO, CCF, MD5, versões de software, ou identificadores técnicos de impressora fiscal.
+    - Se o campo não estiver presente, deixe o campo como string vazia ("").
+    - Use o formato JSON válido, sem explicações adicionais.
+
     """.strip()
 
 # ------------------------------------------------------
