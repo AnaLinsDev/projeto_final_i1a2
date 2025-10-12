@@ -10,6 +10,20 @@ from services.gemini_extractor import (build_nfe_prompt,
 from services.xml_nfe_parser import parse_nfe_xml_to_model
 from utils.json_tools import ensure_pretty_json
 
+def get_gemini_model():
+    if not api_key:
+        st.error("Para PDF/Imagem você precisa informar a Google API Key.")
+        st.stop()
+    try:
+        return genai.GenerativeModel("models/gemini-2.5-flash")
+    except AttributeError:
+        st.error(
+            "A classe GenerativeModel não está disponível."
+            "Atualize o pacote google-generativeai."
+        )
+        st.stop()
+
+
 st.set_page_config(
     page_title="🤖 Agente I2A2 - Leitor de Nota Fiscal",
     page_icon="🧾",
@@ -44,28 +58,17 @@ if api_key:
     os.environ["GOOGLE_API_KEY"] = api_key
     genai.configure(api_key=api_key)
 
+    uploaded_file = st.file_uploader(
+        "📂 Faça upload do arquivo da Nota Fiscal",
+        type=["pdf", "xml", "jpg", "jpeg", "png"]
+    )
 
-def get_gemini_model():
-    if not api_key:
-        st.error("Para PDF/Imagem você precisa informar a Google API Key.")
-        st.stop()
-    try:
-        return genai.GenerativeModel("models/gemini-2.5-flash")
-    except AttributeError:
-        st.error(
-            "A classe GenerativeModel não está disponível."
-            "Atualize o pacote google-generativeai."
-        )
+    if not uploaded_file:
+        st.info("⬆️ Faça upload de um arquivo para iniciar a análise.")
         st.stop()
 
-
-uploaded_file = st.file_uploader(
-    "📂 Faça upload do arquivo da Nota Fiscal",
-    type=["pdf", "xml", "jpg", "jpeg", "png"]
-)
-
-if not uploaded_file:
-    st.info("⬆️ Faça upload de um arquivo para iniciar a análise.")
+else:
+    st.warning("⚠️ Insira sua Google API Key para liberar o upload do arquivo.")
     st.stop()
 
 start_time = time.time()
