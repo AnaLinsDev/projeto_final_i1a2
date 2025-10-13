@@ -1,18 +1,17 @@
 import json
 import os
 import time
-
 import google.generativeai as genai
 import streamlit as st
 
-from services.gemini_extractor import (build_nfe_prompt,
-                                       extract_text_with_gemini)
-from services.xml_nfe_parser import parse_nfe_xml_to_model
+from services.gemini_extractor import build_nfe_prompt, extract_text_with_gemini
 from utils.json_tools import ensure_pretty_json
 
+
+# === Função para inicializar o modelo ===
 def get_gemini_model():
     if not api_key:
-        st.error("Para PDF/Imagem você precisa informar a Google API Key.")
+        st.error("Para PDF/Imagem/XML você precisa informar a Google API Key.")
         st.stop()
     try:
         return genai.GenerativeModel("models/gemini-2.5-flash")
@@ -24,12 +23,12 @@ def get_gemini_model():
         st.stop()
 
 
+# === Configurações da página ===
 st.set_page_config(
     page_title="🤖 Agente I2A2 - Leitor de Nota Fiscal",
     page_icon="🧾",
     layout="centered"
 )
-
 
 st.markdown("""
 <style>
@@ -41,104 +40,95 @@ pre code { white-space: pre-wrap !important; word-wrap: break-word !important; }
 </style>
 """, unsafe_allow_html=True)
 
-
+# === Interface principal ===
 st.title("🤖 Agente I2A2 - Leitor de Nota Fiscal")
-st.caption("💡 Envie um PDF, XML ou imagem (JPG/PNG) "
-           "com uma Nota Fiscal para análise automática.")
+st.caption("💡 Envie um **PDF, XML ou imagem (JPG/PNG)** com uma Nota Fiscal para análise automática.")
 
-
+# === Input da API Key ===
 api_key = st.text_input(
-    "🔑 Insira sua Google API Key "
-    "(obrigatória para PDF/Imagem; opcional para XML):",
+    "🔑 Insira sua Google API Key",
     type="password",
-    help="Para XML, o app parseia localmente sem IA. Para PDF/Imagem, usa Gemini."
+    help="Obrigatória para todos os tipos de arquivo (PDF, XML, imagem)."
 )
 
-if api_key:
-    os.environ["GOOGLE_API_KEY"] = api_key
-    genai.configure(api_key=api_key)
-
-    uploaded_file = st.file_uploader(
-        "📂 Faça upload do arquivo da Nota Fiscal",
-        type=["pdf", "xml", "jpg", "jpeg", "png"]
-    )
-
-    if not uploaded_file:
-        st.info("⬆️ Faça upload de um arquivo para iniciar a análise.")
-        st.stop()
-
-else:
+if not api_key:
     st.warning("⚠️ Insira sua Google API Key para liberar o upload do arquivo.")
+    st.stop()
+
+os.environ["GOOGLE_API_KEY"] = api_key
+genai.configure(api_key=api_key)
+
+# === Upload do arquivo ===
+uploaded_file = st.file_uploader(
+    "📂 Faça upload do arquivo da Nota Fiscal",
+    type=["pdf", "xml", "jpg", "jpeg", "png"]
+)
+
+if not uploaded_file:
+    st.info("⬆️ Faça upload de um arquivo para iniciar a análise.")
     st.stop()
 
 start_time = time.time()
 file_ext = uploaded_file.name.split(".")[-1].lower()
 
-st.success(
-    f"✅ Arquivo **{uploaded_file.name}** detectado! Tipo: **.{file_ext}**"
-)
+st.success(f"✅ Arquivo **{uploaded_file.name}** detectado! Tipo: **.{file_ext}**")
 
-if file_ext == "xml":
-    with st.spinner("📖 Lendo NF-e (XML) localmente..."):
-        try:
-            nfe = parse_nfe_xml_to_model(uploaded_file.getvalue())
-            data = nfe.to_dict()
-            pretty_json = json.dumps(data, ensure_ascii=False, indent=2)
-        except Exception as e:
-            st.error(f"❌ Erro ao parsear NF-e XML: {e}")
-            st.stop()
-
-    total_time = time.time() - start_time
-    st.success(f"🎉 Análise concluída em **{total_time:.2f} segundos**!")
-    st.subheader("📊 Resultado (JSON extraído):")
-    st.code(pretty_json, language="json")
-
-    st.download_button(
-        "💾 Baixar JSON",
-        data=pretty_json.encode("utf-8"),
-        file_name="relatorio.json",
-        mime="application/json"
-    )
-    st.stop()
-
-mime_map = {
-    "pdf": "application/pdf",
-    "jpg": "image/jpeg",
-    "jpeg": "image/jpeg",
-    "png": "image/png",
-}
-mime_type = mime_map.get(file_ext)
-if not mime_type:
-    st.error("Tipo de arquivo não suportado para análise com IA.")
-    st.stop()
-
+# === Criação do modelo ===
 model = get_gemini_model()
 
-with st.spinner("📖 Extraindo texto com Gemini..."):
-    try:
-        texto_extraido = extract_text_with_gemini(
-            model,
-            uploaded_file.getvalue(),
-            mime_type
-        )
-    except Exception as e:
-        st.error(f"❌ Erro ao extrair texto com Gemini: {e}")
+# === Tratamento XML direto (sem parse local) ===
+if file_ext == "xml":
+    with st.spinner("📖 Enviando XML para o Gemini..."):
+        try:
+            xml_content = uploaded_file.getvalue().decode("utf-8", errors="ignore")
+            prompt = build_nfe_prompt(xml_content)
+            response = model.generate_content(prompt)
+            raw = (response.text or "").strip()
+            pretty_json = ensure_pretty_json(raw)
+        except Exception as e:
+            st.error(f"❌ Erro ao processar XML com Gemini: {e}")
+            st.stop()
+
+# === Tratamento para PDF/Imagem ===
+else:
+    mime_map = {
+        "pdf": "application/pdf",
+        "jpg": "image/jpeg",
+        "jpeg": "image/jpeg",
+        "png": "image/png",
+    }
+    mime_type = mime_map.get(file_ext)
+
+    if not mime_type:
+        st.error("Tipo de arquivo não suportado.")
         st.stop()
 
-if not texto_extraido.strip():
-    st.error("⚠️ O Gemini não conseguiu extrair texto do arquivo.")
-    st.stop()
+    with st.spinner("📖 Extraindo texto com Gemini..."):
+        try:
+            texto_extraido = extract_text_with_gemini(
+                model,
+                uploaded_file.getvalue(),
+                mime_type
+            )
+        except Exception as e:
+            st.error(f"❌ Erro ao extrair texto com Gemini: {e}")
+            st.stop()
 
-with st.spinner("🤖 Estruturando JSON com Gemini..."):
-    try:
-        prompt = build_nfe_prompt(texto_extraido)
-        response = model.generate_content(prompt)
-        raw = (response.text or "").strip()
-        pretty_json = ensure_pretty_json(raw)
-    except Exception as e:
-        st.error(f"❌ Erro durante a análise: {e}")
+    if not texto_extraido.strip():
+        st.error("⚠️ O Gemini não conseguiu extrair texto do arquivo.")
         st.stop()
 
+    with st.spinner("🤖 Estruturando JSON com Gemini..."):
+        try:
+            prompt = build_nfe_prompt(texto_extraido)
+            response = model.generate_content(prompt)
+            raw = (response.text or "").strip()
+            pretty_json = ensure_pretty_json(raw)
+        except Exception as e:
+            st.error(f"❌ Erro durante a análise: {e}")
+            st.stop()
+
+# === Resultado ===
 total_time = time.time() - start_time
 st.success(f"🎉 Análise concluída em **{total_time:.2f} segundos**!")
 st.subheader("📊 Resultado (JSON extraído):")
@@ -147,6 +137,7 @@ st.code(pretty_json, language="json")
 st.download_button(
     "💾 Baixar JSON",
     data=pretty_json.encode("utf-8"),
-    file_name="relatorio.json",
+    file_name=f"{uploaded_file.name}_resultado.json",
     mime="application/json"
 )
+
