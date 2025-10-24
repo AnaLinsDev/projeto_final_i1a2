@@ -1,5 +1,3 @@
-
-
 # 📊 Projeto Curso I2A2
 
 Este projeto é uma aplicação interativa construída com [Streamlit](https://streamlit.io/) para a apresentação do projeto final no curso I2A2.  
@@ -16,8 +14,8 @@ O projeto irá automatizar o dia a dia do nosso público, pois tem como objetivo
 ### 1. Clonar o repositório
 
 ```bash
-git clone .git
-cd project
+git clone https://github.com/AnaLinsDev/projeto_final_i1a2.git
+cd projeto_final_i1a2
 ```
 
 ### 2. Criar e ativar um ambiente virtual (recomendado)

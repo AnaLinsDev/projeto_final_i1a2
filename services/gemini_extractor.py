@@ -7,11 +7,7 @@ Extraia TODO o texto legível do arquivo enviado e devolva apenas o texto puro,
 sem explicações.
 """
 
-
 def extract_text_with_gemini(model, file_bytes: bytes, mime_type: str) -> str:
-    """
-    Extrai texto de PDF/Imagem usando Gemini Multimodal.
-    """
     resp = model.generate_content(
         [
             {"mime_type": mime_type, "data": file_bytes},
@@ -49,7 +45,8 @@ Responda APENAS com o JSON válido, no exato formato:
       "descricao": "",
       "quantidade": "",
       "valor_unitario_item": "",
-      "valor_total_item": ""
+      "valor_total_item": "",
+      "codigos_fiscais_item": {{}}
     }}
   ],
   "data_hora_emissao": "",
@@ -59,12 +56,11 @@ Responda APENAS com o JSON válido, no exato formato:
   "pis": "",
   "cofins": "",
   "cfop": "",
-  "cst": "",
-  "outros_codigos_fiscais": {{}}
+  "cst": ""
 }}
 
 Regras:
-- Inclua SOMENTE códigos fiscais em "outros_codigos_fiscais".
+- Inclua SOMENTE códigos fiscais do item relativo em "codigos_fiscais_item".
 - NÃO inclua IE, IM, COO, CCF, MD5, chaves, versões de software,
 ou identificadores técnicos.
 - Se um campo não estiver presente, deixe string vazia "".

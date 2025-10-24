@@ -24,7 +24,13 @@ class ItemInfo:
     quantidade: str = ""
     valor_unitario_item: str = ""
     valor_total_item: str = ""
+    codigos_fiscais_item: Dict[str, str] = None
 
+    def to_dict(self) -> Dict:
+        d = asdict(self)
+        if d.get("codigos_fiscais_item") is None:
+            d["codigos_fiscais_item"] = {}
+        return d
 
 @dataclass
 class NFeExtract:
@@ -39,12 +45,9 @@ class NFeExtract:
     cofins: str = ""
     cfop: str = ""
     cst: str = ""
-    outros_codigos_fiscais: Dict[str, str] = None
 
     def to_dict(self) -> Dict:
         d = asdict(self)
         if not d.get("info_nota"):
             d["info_nota"] = [asdict(ItemInfo())]
-        if d.get("outros_codigos_fiscais") is None:
-            d["outros_codigos_fiscais"] = {}
         return d
