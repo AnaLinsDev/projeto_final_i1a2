@@ -17,7 +17,7 @@ def get_gemini_model():
         return genai.GenerativeModel("models/gemini-2.5-flash")
     except AttributeError:
         st.error(
-            "A classe GenerativeModel não está disponível."
+            "A classe GenerativeModel não está disponível. "
             "Atualize o pacote google-generativeai."
         )
         st.stop()
@@ -41,8 +41,8 @@ pre code { white-space: pre-wrap !important; word-wrap: break-word !important; }
 """, unsafe_allow_html=True)
 
 # === Interface principal ===
-st.title("🤖 Agente I2A2 - Leitor de Nota Fiscal")
-st.caption("💡 Envie um **PDF, XML ou imagem (JPG/PNG)** com uma Nota Fiscal para análise automática.")
+st.title("🤖 Agente I2A2 - Leitor de Nota Fiscal (Multi-arquivos)")
+st.caption("💡 Envie **um ou mais PDFs, XMLs ou imagens (JPG/PNG)** de Notas Fiscais para análise automática.")
 
 # === Input da API Key ===
 api_key = st.text_input(
@@ -52,92 +52,112 @@ api_key = st.text_input(
 )
 
 if not api_key:
-    st.warning("⚠️ Insira sua Google API Key para liberar o upload do arquivo.")
+    st.warning("⚠️ Insira sua Google API Key para liberar o upload dos arquivos.")
     st.stop()
 
 os.environ["GOOGLE_API_KEY"] = api_key
 genai.configure(api_key=api_key)
 
-# === Upload do arquivo ===
-uploaded_file = st.file_uploader(
-    "📂 Faça upload do arquivo da Nota Fiscal",
-    type=["pdf", "xml", "jpg", "jpeg", "png"]
+# === Upload de múltiplos arquivos ===
+uploaded_files = st.file_uploader(
+    "📂 Faça upload dos arquivos das Notas Fiscais",
+    type=["pdf", "xml", "jpg", "jpeg", "png"],
+    accept_multiple_files=True
 )
 
-if not uploaded_file:
-    st.info("⬆️ Faça upload de um arquivo para iniciar a análise.")
-    st.stop()
+if "results" not in st.session_state:
+    st.session_state["results"] = None
 
-start_time = time.time()
-file_ext = uploaded_file.name.split(".")[-1].lower()
+# === Botão de processamento ===
+if uploaded_files and st.button("🚀 Processar arquivos"):
+    all_results = []
+    model = get_gemini_model()
 
-st.success(f"✅ Arquivo **{uploaded_file.name}** detectado! Tipo: **.{file_ext}**")
+    for uploaded_file in uploaded_files:
+        st.divider()
+        st.subheader(f"📄 Processando: {uploaded_file.name}")
 
-# === Criação do modelo ===
-model = get_gemini_model()
+        start_time = time.time()
+        file_ext = uploaded_file.name.split(".")[-1].lower()
+        st.success(f"✅ Arquivo **{uploaded_file.name}** detectado! Tipo: **.{file_ext}**")
 
-# === Tratamento XML direto (sem parse local) ===
-if file_ext == "xml":
-    with st.spinner("📖 Enviando XML para o Gemini..."):
-        try:
-            xml_content = uploaded_file.getvalue().decode("utf-8", errors="ignore")
-            prompt = build_nfe_prompt(xml_content)
-            response = model.generate_content(prompt)
-            raw = (response.text or "").strip()
-            pretty_json = ensure_pretty_json(raw)
-        except Exception as e:
-            st.error(f"❌ Erro ao processar XML com Gemini: {e}")
-            st.stop()
+        result_json = None
 
-# === Tratamento para PDF/Imagem ===
-else:
-    mime_map = {
-        "pdf": "application/pdf",
-        "jpg": "image/jpeg",
-        "jpeg": "image/jpeg",
-        "png": "image/png",
-    }
-    mime_type = mime_map.get(file_ext)
+        # === Tratamento XML direto ===
+        if file_ext == "xml":
+            with st.spinner("📖 Enviando XML para o Gemini..."):
+                try:
+                    xml_content = uploaded_file.getvalue().decode("utf-8", errors="ignore")
+                    prompt = build_nfe_prompt(xml_content)
+                    response = model.generate_content(prompt)
+                    raw = (response.text or "").strip()
+                    result_json = json.loads(ensure_pretty_json(raw))
+                except Exception as e:
+                    st.error(f"❌ Erro ao processar XML com Gemini: {e}")
+                    continue
 
-    if not mime_type:
-        st.error("Tipo de arquivo não suportado.")
-        st.stop()
+        # === Tratamento para PDF/Imagem ===
+        else:
+            mime_map = {
+                "pdf": "application/pdf",
+                "jpg": "image/jpeg",
+                "jpeg": "image/jpeg",
+                "png": "image/png",
+            }
+            mime_type = mime_map.get(file_ext)
 
-    with st.spinner("📖 Extraindo texto com Gemini..."):
-        try:
-            texto_extraido = extract_text_with_gemini(
-                model,
-                uploaded_file.getvalue(),
-                mime_type
-            )
-        except Exception as e:
-            st.error(f"❌ Erro ao extrair texto com Gemini: {e}")
-            st.stop()
+            if not mime_type:
+                st.error(f"❌ Tipo de arquivo não suportado: {file_ext}")
+                continue
 
-    if not texto_extraido.strip():
-        st.error("⚠️ O Gemini não conseguiu extrair texto do arquivo.")
-        st.stop()
+            with st.spinner("📖 Extraindo texto com Gemini..."):
+                try:
+                    texto_extraido = extract_text_with_gemini(
+                        model,
+                        uploaded_file.getvalue(),
+                        mime_type
+                    )
+                except Exception as e:
+                    st.error(f"❌ Erro ao extrair texto com Gemini: {e}")
+                    continue
 
-    with st.spinner("🤖 Estruturando JSON com Gemini..."):
-        try:
-            prompt = build_nfe_prompt(texto_extraido)
-            response = model.generate_content(prompt)
-            raw = (response.text or "").strip()
-            pretty_json = ensure_pretty_json(raw)
-        except Exception as e:
-            st.error(f"❌ Erro durante a análise: {e}")
-            st.stop()
+            if not texto_extraido.strip():
+                st.error("⚠️ O Gemini não conseguiu extrair texto do arquivo.")
+                continue
 
-# === Resultado ===
-total_time = time.time() - start_time
-st.success(f"🎉 Análise concluída em **{total_time:.2f} segundos**!")
-st.subheader("📊 Resultado (JSON extraído):")
-st.code(pretty_json, language="json")
+            with st.spinner("🤖 Estruturando JSON com Gemini..."):
+                try:
+                    prompt = build_nfe_prompt(texto_extraido)
+                    response = model.generate_content(prompt)
+                    raw = (response.text or "").strip()
+                    result_json = json.loads(ensure_pretty_json(raw))
+                except Exception as e:
+                    st.error(f"❌ Erro durante a análise: {e}")
+                    continue
 
-st.download_button(
-    "💾 Baixar JSON",
-    data=pretty_json.encode("utf-8"),
-    file_name=f"{uploaded_file.name}_resultado.json",
-    mime="application/json"
-)
+        if result_json:
+            all_results.append({
+                "file_name": uploaded_file.name,
+                "data": result_json
+            })
 
+        total_time = time.time() - start_time
+        st.info(f"🕒 {uploaded_file.name} processado em {total_time:.2f} segundos.")
+
+    if all_results:
+        st.session_state["results"] = all_results
+        st.success("✅ Todos os arquivos foram processados com sucesso!")
+
+# === Exibição final (usando session_state) ===
+if st.session_state["results"]:
+    combined_json = json.dumps(st.session_state["results"], indent=2, ensure_ascii=False)
+    st.divider()
+    st.subheader("📊 Resultado Final (array de JSONs):")
+    st.code(combined_json, language="json")
+
+    st.download_button(
+        "💾 Baixar resultado combinado",
+        data=combined_json.encode("utf-8"),
+        file_name="resultado_combinado.json",
+        mime="application/json"
+    )
