@@ -52,3 +52,10 @@ http://localhost:8501
 Python 3.9 ou superior
 
 pip atualizado
+
+---
+
+📄 Licença
+
+Este projeto está licenciado sob os termos da Licença MIT.
+Isso significa que você pode usar, copiar, modificar e distribuir este código livremente, desde que mantenha o aviso de copyright original e os termos da licença.

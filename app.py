@@ -41,7 +41,7 @@ pre code { white-space: pre-wrap !important; word-wrap: break-word !important; }
 """, unsafe_allow_html=True)
 
 # === Interface principal ===
-st.title("🤖 Agente I2A2 - Leitor de Nota Fiscal (Multi-arquivos)")
+st.title("🤖 Agente I2A2 - Leitor de Nota Fiscal")
 st.caption("💡 Envie **um ou mais PDFs, XMLs ou imagens (JPG/PNG)** de Notas Fiscais para análise automática.")
 
 # === Input da API Key ===
